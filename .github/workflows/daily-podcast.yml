@@ -1,0 +1,70 @@
+name: Make the morning podcast
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: morning-podcast
+  cancel-in-progress: false
+
+jobs:
+  make-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install audio dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r requirements.txt
+      - name: Download British narrator
+        run: python -m piper.download_voices en_GB-cori-medium --data-dir voices
+      - name: Generate script and audio
+        run: python scripts/create_episode.py
+      - name: Publish MP3 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATE="$(TZ=Europe/London date +%F)"
+          TAG="morning-$DATE"
+          FILE="out/morning-$DATE.mp3"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+            gh release edit "$TAG" --notes-file out/release-notes.md
+          else
+            gh release create "$TAG" "$FILE" --title "The Morning Distraction: $DATE" --notes-file out/release-notes.md
+          fi
+      - name: Build RSS
+        run: python scripts/build_feed.py
+      - name: Upload podcast website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: out/site
+  publish-site:
+    needs: make-and-publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy podcast feed
+        id: deploy
+        uses: actions/deploy-pages@v4
