@@ -1,9 +1,6 @@
 name: Make the morning podcast
 
 on:
-  push:
-    paths:
-      - 'episodes/*.txt'
   schedule:
     - cron: '45 3 * * *'
   workflow_dispatch:
