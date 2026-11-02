@@ -42,7 +42,7 @@ def main():
         "--model", "en_GB-cori-medium",
         "--data-dir", "voices",
         "--input-file", str(INPUT),
-        "--output_file", str(wav),
+        "-f", str(wav),
     ])
     run([
         "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
