@@ -1,8 +1,11 @@
 name: Make the morning podcast
 
 on:
+  push:
+    paths:
+      - 'episodes/*.txt'
   schedule:
-    - cron: '23 4 * * *'
+    - cron: '45 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -15,42 +18,51 @@ concurrency:
 jobs:
   make-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 100
     env:
       GH_TOKEN: ${{ github.token }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Check if published already
+        id: existing
+        shell: bash
+        run: |
+          DATE="$(TZ=Europe/London date +%F)"
+          if gh release view "morning-$DATE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install Python
+        if: steps.existing.outputs.exists == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install audio dependencies
+        if: steps.existing.outputs.exists == 'false'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
           python -m pip install -r requirements.txt
       - name: Download British narrator
+        if: steps.existing.outputs.exists == 'false'
         run: python -m piper.download_voices en_GB-cori-medium --data-dir voices
-      - name: Generate script and audio
+      - name: Narrate ChatGPT's script
+        if: steps.existing.outputs.exists == 'false'
         run: python scripts/create_episode.py
       - name: Publish MP3 release
+        if: steps.existing.outputs.exists == 'false'
         shell: bash
         run: |
           set -euo pipefail
           DATE="$(TZ=Europe/London date +%F)"
-          TAG="morning-$DATE"
-          FILE="out/morning-$DATE.mp3"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FILE" --clobber
-            gh release edit "$TAG" --notes-file out/release-notes.md
-          else
-            gh release create "$TAG" "$FILE" --title "The Morning Distraction: $DATE" --notes-file out/release-notes.md
-          fi
+          gh release create "morning-$DATE" "out/morning-$DATE.mp3" --title "The Morning Distraction: $DATE" --notes-file out/release-notes.md
       - name: Build RSS
         run: python scripts/build_feed.py
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
       - name: Upload podcast website
         uses: actions/upload-pages-artifact@v4
         with:
