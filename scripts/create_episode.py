@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "out"
-TODAY = dt.datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d")
+TODAY = os.environ.get("EPISODE_DATE") or dt.datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d")
 INPUT = ROOT / "episodes" / f"{TODAY}.txt"
 
 
