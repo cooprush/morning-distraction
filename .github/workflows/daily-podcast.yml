@@ -1,6 +1,9 @@
 name: Make the morning podcast
 
 on:
+  push:
+    paths:
+      - 'episodes/*.txt'
   schedule:
     - cron: '45 3 * * *'
   workflow_dispatch:
@@ -22,11 +25,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check if published already
-        id: existing
+      - name: Select episode date
         shell: bash
         run: |
-          DATE="$(TZ=Europe/London date +%F)"
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            DATE="$(git ls-tree -r --name-only HEAD episodes/ | grep -E '^episodes/[0-9]{4}-[0-9]{2}-[0-9]{2}\.txt        id: existing
+        shell: bash
+        run: |
+          DATE="$EPISODE_DATE"
           if gh release view "morning-$DATE" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
@@ -54,7 +61,68 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DATE="$(TZ=Europe/London date +%F)"
+          DATE="$EPISODE_DATE"
+          gh release create "morning-$DATE" "out/morning-$DATE.mp3" --title "The Morning Distraction: $DATE" --notes-file out/release-notes.md
+      - name: Build RSS
+        run: python scripts/build_feed.py
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload podcast website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: out/site
+  publish-site:
+    needs: make-and-publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy podcast feed
+        id: deploy
+        uses: actions/deploy-pages@v4
+ | sort | tail -1 | sed -E 's#episodes/(.*)\.txt#\1#')"
+          else
+            DATE="$(TZ=Europe/London date +%F)"
+          fi
+          test -n "$DATE"
+          echo "EPISODE_DATE=$DATE" >> "$GITHUB_ENV"
+      - name: Check if published already
+        id: existing
+        shell: bash
+        run: |
+          DATE="$EPISODE_DATE"
+          if gh release view "morning-$DATE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install Python
+        if: steps.existing.outputs.exists == 'false'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install audio dependencies
+        if: steps.existing.outputs.exists == 'false'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -r requirements.txt
+      - name: Download British narrator
+        if: steps.existing.outputs.exists == 'false'
+        run: python -m piper.download_voices en_GB-cori-medium --data-dir voices
+      - name: Narrate ChatGPT's script
+        if: steps.existing.outputs.exists == 'false'
+        run: python scripts/create_episode.py
+      - name: Publish MP3 release
+        if: steps.existing.outputs.exists == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATE="$EPISODE_DATE"
           gh release create "morning-$DATE" "out/morning-$DATE.mp3" --title "The Morning Distraction: $DATE" --notes-file out/release-notes.md
       - name: Build RSS
         run: python scripts/build_feed.py
